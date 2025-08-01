@@ -52,16 +52,16 @@ Shader "Unlit/BezierBlade"
                 float4 positionHCS  : SV_POSITION;
             };
 
-            float GetP0()
+            float3 GetP0()
             {
                 return float3(0,0,0);
             }
 
-            float GetP3(float height, float tilt)
+            float3 GetP3(float height, float tilt)
             {
                 float p3y = tilt * height;
                 float p3x = sqrt(height * height - p3y * p3y);
-                return float3(p3x, p3y, 0);
+                return float3(-p3x, p3y, 0);
             }
 
             void GetP1P2(float3 p0,float3 p3, out float3 p1, out float3 p2)
