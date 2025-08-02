@@ -13,14 +13,20 @@ float3 CubicBezier(float3 p0, float3 p1, float3 p2, float3 p3, float t)
         p3*(t2*t);
 }
 
-float3 CubicBezier2D(float3 p0, float3 p1, float3 p2, float3 p3, float t)
+// 计算出曲线的切线
+float3 CubicBezierTangent(float3 p0, float3 p1, float3 p2, float3 p3, float t)
 {
-    float a = lerp(p0, p1, t);
-    float b = lerp(p2, p3, t);
-    float c = lerp(p1, p2, t);
-    float d = lerp(a, c, t);
-    float e = lerp(c, b, t);
-    return lerp(d, e, t);
+    float omt =1 -t;
+    float omt2 = omt * omt;
+    float t2 = t* t;
+
+    float3 tangent =
+            p0 * (-omt2) +
+            p1 * (3 * omt2 - 2 * omt) +
+            p2 * (-3 * t2 + 2 * t) +
+            p3 * (t2);
+
+    return normalize(tangent);
 }
 
 #endif
