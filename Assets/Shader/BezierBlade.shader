@@ -7,6 +7,7 @@ Shader "Unlit/BezierBlade"
         _Tilt("Tilt", Float) = 0.9 // 草尖到地面高度
         _BladeWidth("Blade Width", Float) = 0.1 // 草叶底部宽度
         _TaperAmount("Taper Amount", Float) = 0 // 草叶宽度衰减(从底部到顶部)
+        _CurvedNormalAmount("Curved Normal Amount", Range(0,5)) = 1 // 草叶两侧法线弯曲程度，用来实现草叶的厚度
         _p1Offset("p1 Offset", Float) = 1 
         _p2Offset("p2 Offset", Float) = 1
     }
@@ -40,6 +41,7 @@ Shader "Unlit/BezierBlade"
             float _TaperAmount;
             float _p1Offset;
             float _p2Offset;
+            float _CurvedNormalAmount;
             
             struct Attributes
             {
@@ -100,10 +102,15 @@ Shader "Unlit/BezierBlade"
                 float3 tangent = CubicBezierTangent(p0, p1, p2, p3, t);
                 float3 normal = normalize(cross(tangent, float3(0, 0, 1)));
 
+                float3 curvedNormal = normal;
+                // 乘side表示左右端点方向
+                curvedNormal.z += side * _CurvedNormalAmount;
+                curvedNormal = normalize(curvedNormal);
+
                 // 顶点位置转换到裁剪空间
                 OUT.positionCS = TransformObjectToHClip(vertexPos);
                 // 法线转换到世界坐标系
-                OUT.normal = TransformObjectToWorldNormal(normal);
+                OUT.normal = TransformObjectToWorldNormal(curvedNormal);
                 // 顶点位置转换到世界坐标系 
                 OUT.positionWS = TransformObjectToWorld(vertexPos);
                 return OUT;
