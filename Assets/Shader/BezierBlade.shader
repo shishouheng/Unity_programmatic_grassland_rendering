@@ -32,6 +32,7 @@ Shader "Unlit/BezierBlade"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "../ShaderLibrary/CubicBezier.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
             float _Height;
             float _Tilt;
@@ -49,7 +50,9 @@ Shader "Unlit/BezierBlade"
 
             struct Varyings
             {
-                float4 positionHCS  : SV_POSITION;
+                float4 positionCS : SV_POSITION;
+                float3 normal : TEXCOORD0;
+                float3 positionWS : TEXCOORD1;
             };
 
             float3 GetP0()
@@ -93,13 +96,39 @@ Shader "Unlit/BezierBlade"
                 float side = IN.color.g*2 - 1;
                 float3 vertexPos = centerPos+float3(0,0,side*width);
 
-                OUT.positionHCS = TransformObjectToHClip(vertexPos);
+                // 计算切线，并通过切线来计算法线
+                float3 tangent = CubicBezierTangent(p0, p1, p2, p3, t);
+                float3 normal = normalize(cross(tangent, float3(0, 0, 1)));
+
+                // 顶点位置转换到裁剪空间
+                OUT.positionCS = TransformObjectToHClip(vertexPos);
+                // 法线转换到世界坐标系
+                OUT.normal = TransformObjectToWorldNormal(normal);
+                // 顶点位置转换到世界坐标系 
+                OUT.positionWS = TransformObjectToWorld(vertexPos);
                 return OUT;
             }
 
             half4 frag(Varyings IN) : SV_Target
             {
-                return half4(0, 1, 0, 1);
+                Light mainLight = GetMainLight();
+                float3 N = normalize(IN.normal);
+                float3 L = normalize(mainLight.direction);
+                float V = normalize(GetCameraPositionWS() - IN.positionWS);
+                float3 H = normalize(L + V);
+
+                // 漫反射计算
+                float diffuse = saturate(dot(N, L));
+                // 高光计算
+                float spec = pow(saturate(dot(N, H)), 128) * mainLight.color;
+
+                // 光照组合
+                half3 ambient = SampleSH(N)*0.1; // 环境光
+                half3 lighting = ambient
+                    + mainLight.color * diffuse * half3(0,1,0)
+                    + spec * half3(1,1,1);
+
+                return half4(lighting, 1);
             }
             ENDHLSL
         }
