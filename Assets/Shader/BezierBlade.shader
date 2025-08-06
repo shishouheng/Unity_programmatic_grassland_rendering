@@ -10,6 +10,12 @@ Shader "Unlit/BezierBlade"
         _CurvedNormalAmount("Curved Normal Amount", Range(0,5)) = 1 // 草叶两侧法线弯曲程度，用来实现草叶的厚度
         _p1Offset("p1 Offset", Float) = 1 
         _p2Offset("p2 Offset", Float) = 1
+        
+        [Header(Shading)]
+        _TopColor("Top Color", Color) = (.25,.5,.5,1)
+        _BottomColor("Bottom Color", Color) = (.25,.5,.5,1)
+        _GrassAlbedo("Grass Albedo", 2D) = "white" {}
+        _GrassGloss("Grass Gloss", 2D) = "white" {}
     }
     SubShader
     {
@@ -28,6 +34,9 @@ Shader "Unlit/BezierBlade"
             #pragma exclude_renderers d3d11_9x
             #pragma target 2.0
 
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
+            #pragma multi_compile _ _SHADOWS_SOFT
+            
             #pragma vertex vert
             #pragma fragment frag
 
@@ -42,6 +51,13 @@ Shader "Unlit/BezierBlade"
             float _p1Offset;
             float _p2Offset;
             float _CurvedNormalAmount;
+
+            float4 _TopColor;
+            float4 _BottomColor;
+            TEXTURE2D(_GrassAlbedo);
+            SAMPLER(sampler_GrassAlbedo);
+            TEXTURE2D(_GrassGloss);
+            SAMPLER(sampler_GrassGloss);
             
             struct Attributes
             {
@@ -53,8 +69,11 @@ Shader "Unlit/BezierBlade"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float3 normal : TEXCOORD0;
-                float3 positionWS : TEXCOORD1;
+                float3 positionWS : TEXCOORD0;
+                float3 curvedNormal : TEXCOORD1;
+                float3 originalNormal : TEXCOORD2;
+                float2 uv : TEXCOORD3;
+                float t : TEXCOORD4;
             };
 
             float3 GetP0()
@@ -110,32 +129,42 @@ Shader "Unlit/BezierBlade"
                 // 顶点位置转换到裁剪空间
                 OUT.positionCS = TransformObjectToHClip(vertexPos);
                 // 法线转换到世界坐标系
-                OUT.normal = TransformObjectToWorldNormal(curvedNormal);
+                OUT.curvedNormal = TransformObjectToWorldNormal(curvedNormal);
+                OUT.originalNormal = TransformObjectToWorldNormal(normal);
                 // 顶点位置转换到世界坐标系 
                 OUT.positionWS = TransformObjectToWorld(vertexPos);
+                OUT.uv = IN.texcorrd;
+                OUT.t = t;
                 return OUT;
             }
 
-            half4 frag(Varyings IN) : SV_Target
+            half4 frag(Varyings i,bool isFrontFace : SV_IsFrontFace) : SV_Target
             {
-                Light mainLight = GetMainLight();
-                float3 N = normalize(IN.normal);
-                float3 L = normalize(mainLight.direction);
-                float V = normalize(GetCameraPositionWS() - IN.positionWS);
-                float3 H = normalize(L + V);
+                float3 n = isFrontFace ? normalize(i.curvedNormal) : -reflect(-normalize(i.curvedNormal), normalize(i.originalNormal));
 
-                // 漫反射计算
-                float diffuse = saturate(dot(N, L));
-                // 高光计算
-                float spec = pow(saturate(dot(N, H)), 128) * mainLight.color;
+                Light mainLight = GetMainLight(TransformWorldToShadowCoord(i.positionWS));
+                float3 v = normalize(GetCameraPositionWS() - i.positionWS);
 
-                // 光照组合
-                half3 ambient = SampleSH(N)*0.1; // 环境光
-                half3 lighting = ambient
-                    + mainLight.color * diffuse * half3(0,1,0)
-                    + spec * half3(1,1,1);
+                float3 grassAlbedo = saturate(_GrassAlbedo.Sample(sampler_GrassAlbedo,i.uv));
+                float4 grassCol = lerp(_BottomColor, _TopColor, i.t);
+                float3 albedo = grassCol.rgb * grassAlbedo;
+                float gloss =(1-_GrassGloss.Sample(sampler_GrassGloss,i.uv).r)*0.2;
 
-                return half4(lighting, 1);
+                half3 GI = SampleSH(n);
+
+                BRDFData brdfData;
+                half alpha =1;
+
+                InitializeBRDFData(albedo, 0, half3(1,1,1), gloss, alpha, brdfData);
+                float3 directBRDF = DirectBRDF(brdfData, n,mainLight.direction,  v)* mainLight.color;
+
+                // final color calculate
+                float3 finalColor = GI * albedo + directBRDF*(mainLight.shadowAttenuation*mainLight.distanceAttenuation);
+
+                float4 col;
+                col = float4(finalColor,grassCol.a); // alpha from grasscol
+
+                return half4(col);
             }
             ENDHLSL
         }
